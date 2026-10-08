@@ -195,6 +195,9 @@ Pipfile
 .vscode/
 /cache
 
-uv.lock
-
 scripts/results/
+
+# SWE-bench Pro reproduction: experiment state and third-party checkouts
+/work/
+/external/
+/logs/

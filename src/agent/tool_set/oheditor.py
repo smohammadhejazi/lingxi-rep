@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Literal, get_args
 from agent.tool_set.linter import DefaultLinter
-from agent.tool_set.utils import run_shell_local, maybe_truncate
+from agent.tool_set.utils import run_shell_local, maybe_truncate, is_within
 from agent.tool_set.constant import *
 from agent import runtime_config
 # from agent.tool_set.edit_history import FileHistoryManager
@@ -91,6 +91,11 @@ class OHEditor:
         **kwargs,
     ) -> CLIResult:
         _path = Path(os.path.join(proj_path, path))
+
+        # Paths stay inside the repository copy. Any other host path behaves as a
+        # path that does not exist, which raises here like it does for v1.5.
+        if proj_path and not is_within(str(_path), proj_path):
+            raise FileNotFoundError(f"[Errno 2] No such file or directory: '{_path}'")
 
         print(
             f"path: {_path}, command:{command}, file_text:{file_text}, view_range:{view_range}, old_str:{old_str}, new_str:{new_str}, insert_line:{insert_line}, linting:{enable_linting}"

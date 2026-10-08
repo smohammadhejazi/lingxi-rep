@@ -28,7 +28,12 @@ from src.agent.state import DevKnowledge, State
 logger = get_logger(__name__)
 
 PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-HISTORY_ISSUE_KNOWLEDGE_CACHE_DIR = os.path.join(PROJECT_ROOT_DIR, "data","history_issue_knowledge","cache_20250710")
+HISTORY_ISSUE_KNOWLEDGE_CACHE_DIR = os.environ.get("LINGXI_KNOWLEDGE_CACHE_DIR") or os.path.join(PROJECT_ROOT_DIR, "data","history_issue_knowledge","cache_20250710")
+# Similar historical issues per instance (reranked top-k). v1.5 read its own
+# retrieval file; the reproduction builds one with Lingxi Advisor (scripts/retrieve.py).
+HISTORY_ISSUE_FILE = os.environ.get("LINGXI_HISTORY_ISSUE_FILE") or os.path.join(PROJECT_ROOT_DIR, "dev_knowl", "data", "20250707-SwebenchCustom-WithHistoricIssue-Reranking-Summary-Filtered.jsonl")
+# The model that writes the knowledge. v1.5 used claude-3-5-sonnet-latest, since retired.
+KNOWLEDGE_MODEL = os.environ.get("LINGXI_KNOWLEDGE_MODEL", "claude-haiku-4-5-20251001")
 # create the directory if it does not exist
 if not os.path.exists(HISTORY_ISSUE_KNOWLEDGE_CACHE_DIR):
     os.makedirs(HISTORY_ISSUE_KNOWLEDGE_CACHE_DIR)
@@ -133,7 +138,7 @@ def create_llm() -> ChatAnthropic:
     """Create a ChatAnthropic instance with proper parameters."""
     # Use the same pattern as other files in the codebase
     return ChatAnthropic(
-            model_name="claude-3-5-sonnet-latest",
+            model_name=KNOWLEDGE_MODEL,
             temperature=1,
             max_tokens_to_sample=8096,
             timeout=360,
@@ -687,7 +692,7 @@ def get_dev_knowledge_design_version_4(
     """
     logger.info(f"--get_dev_knowledge instance_id: {instance_id}")
     
-    history_issue_file = os.path.join(PROJECT_ROOT_DIR, "dev_knowl", "data", "20250707-SwebenchCustom-WithHistoricIssue-Reranking-Summary-Filtered.jsonl")
+    history_issue_file = HISTORY_ISSUE_FILE
     logger.info(f"----loading history file: {os.path.basename(history_issue_file)}")
     assert os.path.exists(history_issue_file), f"History issue file does not exist: {history_issue_file}"
     df = pd.read_json(history_issue_file, lines=True)

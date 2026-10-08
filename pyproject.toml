@@ -38,7 +38,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite",
     "grep_ast",
     "scipy>=1.13.1",
-    "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git",
+    "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@99f10d0178986385d049aab2040a34e0a8340c48",
     "lxml",
     "transformers",
     "matplotlib",
@@ -98,3 +98,10 @@ convention = "google"
 dev = [
     "ipykernel>=6.29.5",
 ]
+
+[tool.uv]
+# v1.5 shipped without a lockfile. Resolve every registry dependency as it was
+# on the day v1.5 was published (2025-07-25), so the agent code runs against the
+# library versions it was written for. SWE-ReX is pinned above to the commit that
+# was `main` on that day.
+exclude-newer = "2025-07-26T00:00:00Z"

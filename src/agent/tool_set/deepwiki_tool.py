@@ -16,6 +16,13 @@ from src.agent.logging_config import get_logger
 # Setup logging
 logger = get_logger(__name__)
 
+# DeepWiki-Open server (patched to answer with Claude, see patches/). v1.5 asked
+# gemini-2.5-flash on localhost:8008 and waited without a timeout.
+DEEPWIKI_URL = os.environ.get("LINGXI_DEEPWIKI_URL", "http://localhost:8008/chat/completions/stream")
+DEEPWIKI_PROVIDER = os.environ.get("LINGXI_DEEPWIKI_PROVIDER", "anthropic")
+DEEPWIKI_MODEL = os.environ.get("LINGXI_DEEPWIKI_MODEL", "claude-haiku-4-5-20251001")
+DEEPWIKI_TIMEOUT = float(os.environ.get("LINGXI_DEEPWIKI_TIMEOUT", "900"))
+
 
 @tool
 def ask_repository_agent(query: str, config: RunnableConfig = None) -> str:
@@ -54,12 +61,12 @@ def ask_repository_agent(query: str, config: RunnableConfig = None) -> str:
     
     logger.info(f"Asking {instance_id} at {repo_dir}")
 
-    url = "http://localhost:8008/chat/completions/stream"
+    url = DEEPWIKI_URL
     
     payload = {
       "repo_url": repo_dir,
-      "provider":"google",
-      "model":"gemini-2.5-flash",
+      "provider": DEEPWIKI_PROVIDER,
+      "model": DEEPWIKI_MODEL,
       "messages": [
           {
               "role": "user",
@@ -67,11 +74,15 @@ def ask_repository_agent(query: str, config: RunnableConfig = None) -> str:
           }
       ]
     }
-    response = requests.post(url, json=payload, stream=True)
-    if response.ok:
-        return response.text
-    else:
-        logger.error(f"Error: {response.text}")
-    return None
+    try:
+        response = requests.post(url, json=payload, stream=True, timeout=DEEPWIKI_TIMEOUT)
+        if response.ok:
+            return response.text
+        else:
+            logger.error(f"Error: {response.text}")
+    except requests.RequestException as e:
+        logger.error(f"Error: {e}")
+        return f"Error: the repository agent is unavailable: {e}"
+    return f"Error: the repository agent failed with HTTP {response.status_code}"
 
 

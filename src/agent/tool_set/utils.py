@@ -1,3 +1,4 @@
+import os
 import subprocess
 import time
 from typing import Any, Optional
@@ -24,6 +25,26 @@ def get_runtime_config(config: Optional[RunnableConfig] = None) -> Any:
     
     # Fall back to global rc
     return runtime_config.RuntimeConfig()
+
+def is_within(path: str, root: str) -> bool:
+    """Whether `path` resolves inside `root`. The host-side tools use it to keep
+    the agents inside their repository copy."""
+    root = os.path.realpath(root)
+    return os.path.commonpath([os.path.realpath(path), root]) == root
+
+def maybe_truncate(
+    content: str,
+    truncate_after: int | None = MAX_RESPONSE_LEN_CHAR,
+    truncate_notice: str = CONTENT_TRUNCATED_NOTICE,
+) -> str:
+    """
+    Truncate content and append a notice if content exceeds the specified length.
+    """
+    return (
+        content
+        if not truncate_after or len(content) <= truncate_after
+        else content[:truncate_after] + truncate_notice
+    )
 
 def run_shell_local(
     cmd: str,

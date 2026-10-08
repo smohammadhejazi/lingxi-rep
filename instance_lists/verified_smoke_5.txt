@@ -1,0 +1,8 @@
+# SWE-bench Verified smoke test, 5 instances: the five that Lingxi v2 + MiniMax-M2.5 resolved in
+# g_verified_lingxi_v2_mix_10 (swebench-pro-cli-runner@9169749, resources/instance_groups/),
+# the group the runner set aside for a Haiku baseline on Verified.
+django__django-16819
+sympy__sympy-20916
+matplotlib__matplotlib-22871
+django__django-11119
+django__django-14752

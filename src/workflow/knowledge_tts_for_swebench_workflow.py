@@ -16,7 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent
 from langgraph.types import Command, RetryPolicy
 
-from src.agent import runtime_config
+from src.agent import benchmark, runtime_config, sandbox
 from src.agent.constant import RUNTIME_DIR
 from src.agent.logging_config import configure_logging, get_logger
 from src.agent.prompt.problem_decoder import (
@@ -58,6 +58,10 @@ from src.utils.format_utils import format_section_header
 str_output_parser = StrOutputParser()
 
 ANTHROPIC_MODEL_VERSION = "4"
+# The model every agent of the workflow runs on. v1.5 used claude-sonnet-4-20250514.
+AGENT_MODEL = os.environ.get("LINGXI_AGENT_MODEL", "claude-haiku-4-5-20251001")
+# Anthropic tool type of the text editor; claude-sonnet-4-20250514 took text_editor_20250429.
+TEXT_EDITOR_TOOL_TYPE = os.environ.get("LINGXI_TEXT_EDITOR_TOOL_TYPE", "text_editor_20250429")
 
 logger = get_logger(__name__)
 configure_logging(
@@ -71,7 +75,7 @@ def get_llm(
 ):
     """Get an LLM with the specified temperature."""
     return ChatAnthropic(
-        model_name="claude-sonnet-4-20250514",
+        model_name=AGENT_MODEL,
         temperature=1,
         max_tokens_to_sample=max_tokens + thinking_budget,
         thinking={"type": "enabled", "budget_tokens": thinking_budget},
@@ -105,18 +109,8 @@ def input_handler_node(
         rc.pretty_print_runtime()
     else:
         logger.info(f"Loading swe-bench instance: {input_value}")
-        swe_instances = load_dataset(
-            "princeton-nlp/SWE-bench_Verified", split="test", cache_dir=RUNTIME_DIR
-        )
-        found = False
-        for entry in swe_instances:
-            entry_dict = dict(entry)
-            if entry_dict["instance_id"] == input_value:
-                found = True
-                issue_desc = entry_dict["problem_statement"]
-                break
-        if not found:
-            raise ValueError(f"Invalid SWE instance id: {input_value}")
+        # SWE-bench Verified (as in v1.5) or SWE-bench Pro, see src/agent/benchmark.py
+        issue_desc = benchmark.issue_text(benchmark.get_instance(input_value))
         runtime_info = None
 
     # Format issue description
@@ -623,7 +617,7 @@ def solution_mapper_sampler_node(
     if not cache_loaded:
         if ANTHROPIC_MODEL_VERSION == "4":
             anthropic_str_tool = {
-                "type": "text_editor_20250429",
+                "type": TEXT_EDITOR_TOOL_TYPE,
                 "name": "str_replace_based_edit_tool",
             }
             tools = [
@@ -910,7 +904,7 @@ def problem_solver_sampler_node(
     if not cache_loaded or not generated_patch:
         if ANTHROPIC_MODEL_VERSION == "4":
             anthropic_str_tool = {
-                "type": "text_editor_20250429",
+                "type": TEXT_EDITOR_TOOL_TYPE,
                 "name": "str_replace_based_edit_tool",
             }
             tools = [
@@ -1009,10 +1003,10 @@ def problem_solver_sampler_node(
         generated_patch = None
         # stop the swe_rex_deployment
         if runtime_obj.runtime_type == runtime_config.RuntimeType.SWEREX:
-            generated_patch = run_shell_cmd.invoke(
-                {"command": "git -c core.fileMode=false diff --exit-code --no-color"},
-                config=config,
-            )
+            # v1.5 ran `git -c core.fileMode=false diff --exit-code --no-color` in the
+            # agent's shell, which leaves out new files. SWE-bench Pro tasks often
+            # need one, so the prediction is captured with new files included.
+            generated_patch = sandbox.capture_patch(runtime_obj)
             generated_patch = generated_patch + "\n"
 
             patch_size = len(generated_patch) if generated_patch else 0

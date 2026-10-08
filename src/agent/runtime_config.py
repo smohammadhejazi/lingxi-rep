@@ -22,6 +22,7 @@ from prompt_toolkit.completion import FuzzyWordCompleter
 # Consolidated imports to avoid having imports in methods
 from swerex.runtime.abstract import BashAction, WriteFileRequest
 
+from src.agent import benchmark
 from src.agent.constant import RUNTIME_DIR
 from src.agent.github_utils import get_issue_close_commit, get_issue_description, parse_github_issue_url
 from src.agent.logging_config import configure_logging, get_logger
@@ -83,6 +84,7 @@ class RuntimeConfig:
         self.runtime_type = None
         self.swe_instance = None
         self.swe_rex_deployment = None
+        self.diff_base = None
 
     def load(self, owner: str, project: str, commit_id: str) -> None:
         """Load configuration for a GitHub repository"""
@@ -107,23 +109,12 @@ class RuntimeConfig:
 
     def load_from_swe_rex_docker_instance(self, instance_id: str, checkout_commit: str | None = None) -> None:
         """Load configuration from a SWEREx Docker instance"""
-        from datasets import load_dataset
+        # SWE-bench Verified (as in v1.5) or SWE-bench Pro, see src/agent/benchmark.py
+        entry = benchmark.get_instance(instance_id)
+        self.swe_instance = entry.copy()
+        self.issue_desc = entry["problem_statement"]
 
-        swe_instances = load_dataset("princeton-nlp/SWE-bench_Verified", split="test", cache_dir=RUNTIME_DIR)
-        # swe_instances = load_dataset("princeton-nlp/SWE-Bench_Lite", split="test", cache_dir=RUNTIME_DIR)
-
-        found = False
-        for entry in swe_instances:
-            if entry["instance_id"] == instance_id:
-                found = True
-                self.swe_instance = entry.copy()
-                self.issue_desc = entry["problem_statement"]
-                break
-
-        if not found:
-            raise ValueError(f"Invalid SWE instance id: {instance_id}")
-
-        self.swe_rex_deployment, self.proj_path = asyncio.run(load_swe_instance_for_swerex(instance_id, checkout_commit))
+        self.swe_rex_deployment, self.proj_path, self.diff_base = asyncio.run(load_swe_instance_for_swerex(instance_id, checkout_commit))
 
         self.initialized = True
         self.runtime_type = RuntimeType.SWEREX

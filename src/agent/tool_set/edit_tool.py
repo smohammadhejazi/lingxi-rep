@@ -9,6 +9,11 @@ from agent import runtime_config
 from agent.runtime_config import RuntimeConfig
 from agent.tool_set.oheditor import CLIResult, OHEditor
 from langchain_core.runnables import RunnableConfig
+# Missing from the v1.5 commit, which calls both below (NameError on every edit).
+from agent.logging_config import get_logger
+from agent.tool_set.utils import get_runtime_config
+
+logger = get_logger(__name__)
 _GLOBAL_EDITOR = OHEditor()
 
 

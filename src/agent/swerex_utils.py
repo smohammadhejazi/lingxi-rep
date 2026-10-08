@@ -6,6 +6,7 @@ from swerex.deployment.docker import DockerDeployment
 import os
 import uuid
 from swerex.deployment.config import DockerDeploymentConfig
+from src.agent import benchmark, sandbox
 from src.agent.constant import DOCKER_MAP_DIR, REPO_MAP_DIR
 
 
@@ -35,9 +36,9 @@ def extract_git_diff_swerex_container(runtime_config_obj=None):
         swe_rex_runtime = rc.swe_rex_deployment.runtime
         
         # First ensure we're in the right directory
-        print("Running 'cd /testbed'")
+        print(f"Running 'cd {benchmark.REPO_DIR}'")
         cd_result = asyncio.run(swe_rex_runtime.run_in_session(
-            BashAction(command="cd /testbed", check="ignore")
+            BashAction(command=f"cd {benchmark.REPO_DIR}", check="ignore")
         ))
         print(f"cd result: {cd_result.exit_code}")
         
@@ -65,54 +66,69 @@ def extract_git_diff_swerex_container(runtime_config_obj=None):
         print(f"ERROR in extract_git_diff_swerex_container: {e}")
         return ""
 
-async def load_swe_instance_for_swerex(instance_id: str,checkout_commit: str | None = None) -> Tuple[DockerDeployment, str]:
-    repo, name = instance_id.split('__')
-    docker_image_name = f'swebench/sweb.eval.x86_64.{repo}_1776_{name}:latest'
+async def load_swe_instance_for_swerex(instance_id: str,checkout_commit: str | None = None) -> Tuple[DockerDeployment, str, str]:
+    instance = benchmark.get_instance(instance_id)
+    # The instance image with its history pruned to the base commit, started
+    # with no network access (see src/agent/sandbox.py).
+    docker_image_name = sandbox.prepare_image(instance)
+    repo_dir = benchmark.REPO_DIR
+    repo_name = os.path.basename(repo_dir)
 
     # Create a unique local directory to map into the container
     tmp_folder_name = str(uuid.uuid4())[:8]
-    docker_map_path = os.path.join(DOCKER_MAP_DIR, tmp_folder_name)
+    docker_map_path = os.path.join(sandbox.instance_workspace_dir(instance_id), tmp_folder_name)
     os.makedirs(docker_map_path, exist_ok=True)
     print(f"docker_map_path: {docker_map_path}")
     # Prepare docker_args for volume mapping
     docker_args = [
-        "-v", f"{docker_map_path}:/docker_map"
+        "-v", f"{docker_map_path}:/docker_map",
+        *sandbox.server_mount_args(docker_image_name),
     ]
     # You can add more docker_args as needed, e.g. user, etc.
 
-    config = DockerDeploymentConfig(
+    deployment = sandbox.IsolatedDockerDeployment(
         image=docker_image_name,
         docker_args=docker_args,
-        python_standalone_dir=None
-        # ...add other config fields as needed
+        pull="never",
     )
-    deployment = config.get_deployment()
     await deployment.start()
-    
+
     swe_rex_runtime = deployment.runtime
 
     await swe_rex_runtime.create_session(CreateBashSessionRequest())
+    print(await swe_rex_runtime.run_in_session(BashAction(command=f"cd {repo_dir}")))
 
     if checkout_commit:
         print(await swe_rex_runtime.run_in_session(BashAction(command=f"git checkout {checkout_commit}", check="ignore")))
 
     print(await swe_rex_runtime.run_in_session(BashAction(command="git config user.name 'Temp User' && git config user.email 'temp@example.com' && git commit -am 'swe-bench-extra'", check="ignore")))
-    print(await swe_rex_runtime.run_in_session(BashAction(command="mv /testbed/ /docker_map/")))
-    print(await swe_rex_runtime.run_in_session(BashAction(command="chmod -R 777 /docker_map/testbed")))
-    print(await swe_rex_runtime.run_in_session(BashAction(command="ln -s /docker_map/testbed /testbed")))
-    print(await swe_rex_runtime.run_in_session(BashAction(command="cd /testbed")))
-    
-    project_path = os.path.join(docker_map_path, "testbed")
-    
-    # Ensure a pristine copy in repo_map (for wiki)
+    # The commit the prediction is diffed against.
+    diff_base = (await swe_rex_runtime.run_in_session(BashAction(command="git rev-parse HEAD"))).output.strip()
+    print(await swe_rex_runtime.run_in_session(BashAction(command="cd /")))
+    print(await swe_rex_runtime.run_in_session(BashAction(command=f"mv {repo_dir}/ /docker_map/")))
+    print(await swe_rex_runtime.run_in_session(BashAction(command=f"chmod -R 777 /docker_map/{repo_name}")))
+    print(await swe_rex_runtime.run_in_session(BashAction(command=f"ln -s /docker_map/{repo_name} {repo_dir}")))
+    print(await swe_rex_runtime.run_in_session(BashAction(command=f"cd {repo_dir}")))
+
+    project_path = os.path.join(docker_map_path, repo_name)
+
+    # Ensure a pristine copy in repo_map (for wiki). Only from the instance's own
+    # checkout: a historical checkout (checkout_commit) must not become the code
+    # DeepWiki answers questions about. Directories DeepWiki skips anyway are not
+    # copied, and symlinks are copied as links.
     repo_map_path = os.path.join(REPO_MAP_DIR, f"{instance_id}")
-    docker_map_repo_path = os.path.join(docker_map_path, "testbed")
-    if not os.path.exists(repo_map_path):
+    docker_map_repo_path = os.path.join(docker_map_path, repo_name)
+    if checkout_commit is None and not os.path.exists(repo_map_path):
         print(f"Copying pristine copy of {instance_id} to {repo_map_path} for wiki")
-        shutil.copytree(docker_map_repo_path, repo_map_path)
-    
+        shutil.copytree(
+            docker_map_repo_path,
+            repo_map_path,
+            symlinks=True,
+            ignore=shutil.ignore_patterns(".git", "node_modules"),
+        )
+
     print(f"Project path: {project_path}")
-    return deployment, project_path
+    return deployment, project_path, diff_base
 
 
     

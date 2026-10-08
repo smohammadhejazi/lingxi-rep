@@ -13,11 +13,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import ToolNode
 from swerex.runtime.abstract import CreateBashSessionRequest, BashAction, Command, WriteFileRequest, CloseBashSessionRequest
 from swerex.deployment.docker import DockerDeployment
-from src.agent import runtime_config
+from src.agent import benchmark, runtime_config
 from src.agent.runtime_config import RuntimeType
 from src.agent.constant import PATCH_RESULT_DIR, RUNTIME_DIR
 from src.agent.tool_set.constant import MAX_LIST_FILES, MAX_RESPONSE_LEN_CHAR, FILE_CONTENT_TRUNCATED_NOTICE
-from src.agent.tool_set.utils import get_runtime_config
+from src.agent.tool_set.utils import get_runtime_config, is_within
 from src.agent.tool_set.edit_tool import str_replace_editor
 from swerex.exceptions import CommandTimeoutError
 from src.agent.logging_config import get_logger
@@ -99,8 +99,8 @@ def search_files_by_keywords(
     except (subprocess.SubprocessError, FileNotFoundError):
         return "Error: ripgrep is not installed or not available in PATH. Please install ripgrep for this tool to work."
     
-    # Make sure directory exists
-    if not os.path.exists(directory):
+    # Make sure directory exists; searches stay inside the repository copy
+    if not os.path.exists(directory) or not is_within(directory, get_runtime_config(config).proj_path):
         return f"Error: Directory or file '{directory}' does not exist"
     else:
         log_output.append(f"--search under: {directory}")
@@ -470,7 +470,7 @@ Returns:
             try:
                 asyncio.run(runtime.create_session(CreateBashSessionRequest()))
                 asyncio.run(runtime.run_in_session(BashAction(command="cd /",check="silent", timeout=10)))
-                asyncio.run(runtime.run_in_session(BashAction(command="cd testbed",check="silent", timeout=10)))
+                asyncio.run(runtime.run_in_session(BashAction(command=f"cd {benchmark.REPO_DIR.lstrip('/')}",check="silent", timeout=10)))
             except Exception as e:
                 logger.error(f"Error creating new session after timeout: {e}")
             # Retry the command once, but catch timeout error on retry as well

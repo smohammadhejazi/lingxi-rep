@@ -13,7 +13,7 @@ from tree_sitter import Language, Parser
 
 
 
-RUNTIME_DIR = os.path.join(os.environ["HOME"], "Tmp", "swe-runtime")
+RUNTIME_DIR = os.environ.get("LINGXI_RUNTIME_DIR") or os.path.join(os.environ["HOME"], "Tmp", "swe-runtime")
 
 DOCKER_MAP_DIR = os.path.join(RUNTIME_DIR, "docker_map")
 os.makedirs(DOCKER_MAP_DIR, exist_ok=True)
