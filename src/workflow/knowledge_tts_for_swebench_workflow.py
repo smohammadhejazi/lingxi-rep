@@ -60,8 +60,9 @@ str_output_parser = StrOutputParser()
 ANTHROPIC_MODEL_VERSION = "4"
 # The model every agent of the workflow runs on. v1.5 used claude-sonnet-4-20250514.
 AGENT_MODEL = os.environ.get("LINGXI_AGENT_MODEL", "claude-haiku-4-5-20251001")
-# Anthropic tool type of the text editor; claude-sonnet-4-20250514 took text_editor_20250429.
-TEXT_EDITOR_TOOL_TYPE = os.environ.get("LINGXI_TEXT_EDITOR_TOOL_TYPE", "text_editor_20250429")
+# Anthropic tool type of the text editor. v1.5 used text_editor_20250429 (claude-sonnet-4-20250514);
+# Haiku 4.5 only accepts text_editor_20250728, which has the same commands and input schema.
+TEXT_EDITOR_TOOL_TYPE = os.environ.get("LINGXI_TEXT_EDITOR_TOOL_TYPE", "text_editor_20250728")
 
 logger = get_logger(__name__)
 configure_logging(

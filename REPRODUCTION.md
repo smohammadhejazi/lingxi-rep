@@ -52,6 +52,7 @@ the agents' cached messages, logs and `result.json`).
 | Area | v1.5 | Here | Why |
 |---|---|---|---|
 | Agent model | `claude-sonnet-4-20250514` | `claude-haiku-4-5-20251001`, same settings (temperature 1, thinking 1024, 3072 output; aggregator 4096 / 8192) | The experiment |
+| Text editor tool | `text_editor_20250429` | `text_editor_20250728` (same commands and input schema; `max_characters` not set) | Haiku 4.5 rejects `text_editor_20250429` |
 | Knowledge writer | `claude-3-5-sonnet-latest`, temperature 1, 8096 tokens | Haiku 4.5, same settings | Retired; the experiment |
 | Historical issues | Offline: Qwen3-Embedding-8B top 20, Qwen3-Reranker-4B top 3, then a filter; file not released | Lingxi Advisor 0.8.6 retrieval stage with its batch-mode options: GitHub search, temporal and leakage checks, Haiku relevance gate, top 3 (`scripts/retrieve.py`) | The authors' public reimplementation; their data is internal |
 | DeepWiki | Self-hosted, answers with `gemini-2.5-flash` (thinking on by default) | DeepWiki-Open `a5f39e3` (2025-07-21), answers with Haiku 4.5 at temperature 0.7, no extended thinking; OpenAI `text-embedding-3-small` embeddings (DeepWiki's default; v1.5's embedder is not recorded) | Claude-only model choice; their server setup was not released |
