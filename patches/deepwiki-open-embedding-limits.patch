@@ -1,0 +1,138 @@
+diff --git a/api/openai_client.py b/api/openai_client.py
+index bc75ed5..4be4f84 100644
+--- a/api/openai_client.py
++++ b/api/openai_client.py
+@@ -27,6 +27,7 @@ openai = safe_import(OptionalPackages.OPENAI.value[0], OptionalPackages.OPENAI.v
+ 
+ from openai import OpenAI, AsyncOpenAI, Stream
+ from openai import (
++    APIConnectionError,
+     APITimeoutError,
+     InternalServerError,
+     RateLimitError,
+@@ -117,6 +118,107 @@ def get_probabilities(completion: ChatCompletion) -> List[List[TokenLogProb]]:
+     return log_probs
+ 
+ 
++
++# --- Embedding request limits (lingxi-rep patch) -----------------------------
++# OpenAI rejects an embeddings request over 300,000 tokens, or with any input over
++# 8,192 tokens, with a 400; the backoff decorators below give up after 5 seconds
++# (also on 429s), and the whole batch (500 chunks) is then stored without
++# embeddings and silently dropped from retrieval. Each batch is therefore sent as
++# sub-requests under the request limit, each input truncated to the input limit,
++# and rate limits, timeouts and server errors retried for minutes, not seconds.
++EMBEDDING_MAX_INPUT_TOKENS = 8191
++EMBEDDING_MAX_REQUEST_TOKENS = 250_000
++EMBEDDING_RETRIES = 8
++_EMBEDDING_TRANSIENT = (RateLimitError, APITimeoutError, InternalServerError, APIConnectionError)
++
++
++def _embedding_encoding():
++    import tiktoken
++    return tiktoken.get_encoding("cl100k_base")
++
++
++def _embedding_sub_requests(api_kwargs: Dict) -> list:
++    """api_kwargs split into requests within OpenAI's token limits."""
++    inputs = api_kwargs.get("input")
++    if isinstance(inputs, str):
++        inputs = [inputs]
++    enc = _embedding_encoding()
++    texts, sizes, truncated = [], [], 0
++    for text in inputs:
++        tokens = enc.encode(text, disallowed_special=())
++        if len(tokens) > EMBEDDING_MAX_INPUT_TOKENS:
++            tokens = tokens[:EMBEDDING_MAX_INPUT_TOKENS]
++            text = enc.decode(tokens)
++            truncated += 1
++        texts.append(text)
++        sizes.append(max(1, len(tokens)))
++    if truncated:
++        log.warning(f"Truncated {truncated} embedding input(s) to {EMBEDDING_MAX_INPUT_TOKENS} tokens")
++    requests_, batch, used = [], [], 0
++    for text, size in zip(texts, sizes):
++        if batch and used + size > EMBEDDING_MAX_REQUEST_TOKENS:
++            requests_.append(batch)
++            batch, used = [], 0
++        batch.append(text)
++        used += size
++    if batch:
++        requests_.append(batch)
++    return [{**api_kwargs, "input": batch} for batch in requests_]
++
++
++def _merge_embedding_responses(responses: list):
++    data, prompt_tokens, total_tokens = [], 0, 0
++    for response in responses:
++        for item in response.data:
++            data.append(item.model_copy(update={"index": len(data)}))
++        if response.usage is not None:
++            prompt_tokens += response.usage.prompt_tokens
++            total_tokens += response.usage.total_tokens
++    update = {"data": data}
++    if responses[0].usage is not None:
++        update["usage"] = responses[0].usage.model_copy(
++            update={"prompt_tokens": prompt_tokens, "total_tokens": total_tokens})
++    return responses[0].model_copy(update=update)
++
++
++def _embedding_delay(attempt: int) -> float:
++    import random
++    return min(60.0, 2.0 ** attempt) + random.uniform(0, 1)
++
++
++def create_embeddings(client, api_kwargs: Dict):
++    import time
++    responses = []
++    for sub_kwargs in _embedding_sub_requests(api_kwargs):
++        for attempt in range(EMBEDDING_RETRIES + 1):
++            try:
++                responses.append(client.embeddings.create(**sub_kwargs))
++                break
++            except _EMBEDDING_TRANSIENT as e:
++                if attempt == EMBEDDING_RETRIES:
++                    raise
++                delay = _embedding_delay(attempt)
++                log.warning(f"Embedding request failed ({type(e).__name__}); retrying in {delay:.0f}s")
++                time.sleep(delay)
++    return _merge_embedding_responses(responses)
++
++
++async def acreate_embeddings(client, api_kwargs: Dict):
++    import asyncio
++    responses = []
++    for sub_kwargs in _embedding_sub_requests(api_kwargs):
++        for attempt in range(EMBEDDING_RETRIES + 1):
++            try:
++                responses.append(await client.embeddings.create(**sub_kwargs))
++                break
++            except _EMBEDDING_TRANSIENT as e:
++                if attempt == EMBEDDING_RETRIES:
++                    raise
++                delay = _embedding_delay(attempt)
++                log.warning(f"Embedding request failed ({type(e).__name__}); retrying in {delay:.0f}s")
++                await asyncio.sleep(delay)
++    return _merge_embedding_responses(responses)
++
+ class OpenAIClient(ModelClient):
+     __doc__ = r"""A component wrapper for the OpenAI API client.
+ 
+@@ -415,7 +517,7 @@ class OpenAIClient(ModelClient):
+         log.info(f"api_kwargs: {api_kwargs}")
+         self._api_kwargs = api_kwargs
+         if model_type == ModelType.EMBEDDER:
+-            return self.sync_client.embeddings.create(**api_kwargs)
++            return create_embeddings(self.sync_client, api_kwargs)
+         elif model_type == ModelType.LLM:
+             if "stream" in api_kwargs and api_kwargs.get("stream", False):
+                 log.debug("streaming call")
+@@ -496,7 +598,7 @@ class OpenAIClient(ModelClient):
+         if self.async_client is None:
+             self.async_client = self.init_async_client()
+         if model_type == ModelType.EMBEDDER:
+-            return await self.async_client.embeddings.create(**api_kwargs)
++            return await acreate_embeddings(self.async_client, api_kwargs)
+         elif model_type == ModelType.LLM:
+             return await self.async_client.chat.completions.create(**api_kwargs)
+         elif model_type == ModelType.IMAGE_GENERATION:

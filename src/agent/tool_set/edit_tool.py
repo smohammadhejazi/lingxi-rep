@@ -116,6 +116,9 @@ def str_replace_editor(
         insert_line=insert_line,
         proj_path=proj_path,
     )
+    # A few OHEditor branches return a plain error string (v1.5: AttributeError below).
+    if isinstance(result, str):
+        result = CLIResult(error=result)
     # print(result)
     if result.error:
         log_output.append(f"--str_replace_editor return ERROR: {result.error}")
@@ -214,6 +217,9 @@ def str_replace_based_edit_tool(
         insert_line=insert_line,
         proj_path=proj_path,
     )
+    # A few OHEditor branches return a plain error string (v1.5: AttributeError below).
+    if isinstance(result, str):
+        result = CLIResult(error=result)
     # print(result)
     if result.error:
         log_output.append(f"--str_replace_editor return ERROR: {result.error}")

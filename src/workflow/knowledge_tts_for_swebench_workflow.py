@@ -14,6 +14,33 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent
+from pydantic import ValidationError
+
+# v1.5 ran ToolNode with handle_tool_errors=False, so a tool call with invalid
+# arguments (Haiku sends {} when a call is cut off at the output limit) ended the
+# instance. Those go back to the model as LangGraph's error message; any other
+# tool exception still raises, as in v1.5.
+TOOL_INPUT_ERRORS = (ValidationError,)
+
+
+def _without_trailing_thinking(messages: list) -> list:
+    """The mapper's conversation as the solver's input. The API rejects an
+    assistant message whose final block is thinking; Haiku can end a turn with a
+    thinking-only message (v1.5's Sonnet ended with text). Trailing thinking blocks
+    are dropped from the last message, and the message too if nothing is left."""
+    from langchain_core.messages import AIMessage
+
+    messages = list(messages)
+    while messages and isinstance(messages[-1], AIMessage) and isinstance(messages[-1].content, list):
+        blocks = list(messages[-1].content)
+        while blocks and isinstance(blocks[-1], dict) and blocks[-1].get("type") in ("thinking", "redacted_thinking"):
+            blocks.pop()
+        if blocks:
+            if len(blocks) != len(messages[-1].content):
+                messages[-1] = messages[-1].model_copy(update={"content": blocks})
+            break
+        messages.pop()
+    return messages
 from langgraph.types import Command, RetryPolicy
 
 from src.agent import benchmark, runtime_config, sandbox
@@ -295,7 +322,7 @@ def problem_decoder_sampler_node(
             ask_repository_agent,
             think,
         ]
-        tool_node = ToolNode(tools, handle_tool_errors=False)
+        tool_node = ToolNode(tools, handle_tool_errors=TOOL_INPUT_ERRORS)
 
         agent = create_react_agent(
             get_llm().bind_tools(tools),
@@ -640,7 +667,7 @@ def solution_mapper_sampler_node(
                 run_shell_cmd,
                 think,
             ]
-        tool_node = ToolNode(tools, handle_tool_errors=False)
+        tool_node = ToolNode(tools, handle_tool_errors=TOOL_INPUT_ERRORS)
 
         agent = create_react_agent(
             get_llm().bind_tools(
@@ -927,7 +954,7 @@ def problem_solver_sampler_node(
                 run_shell_cmd,
                 think,
             ]
-        tool_node = ToolNode(tools, handle_tool_errors=False)
+        tool_node = ToolNode(tools, handle_tool_errors=TOOL_INPUT_ERRORS)
 
         agent = create_react_agent(
             get_llm().bind_tools(
@@ -969,7 +996,7 @@ def problem_solver_sampler_node(
             )
             problem_solver_state["messages"] = messages_reducer(
                 problem_solver_state["messages"],
-                current_solution_mapper_message,
+                _without_trailing_thinking(current_solution_mapper_message),
             )
             replay_result = replay_agent_action(current_solution_mapper_message, config)
             if replay_result:

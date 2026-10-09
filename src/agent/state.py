@@ -43,8 +43,13 @@ def messages_reducer(left: list, right: list) -> list:
     if len(result) > 0:
         last_message = result[-1]
         if isinstance(last_message.content, list) and len(last_message.content) > 0:
-            # Mark the last content block with cache_control
-            last_message.content[-1]["cache_control"] = {"type": "ephemeral"}
+            # Mark the last content block with cache_control. The API rejects it on
+            # thinking blocks (v1.5 marked whatever came last: a 400 when a message
+            # ended with one), so the last other block is marked.
+            for block in reversed(last_message.content):
+                if isinstance(block, dict) and block.get("type") not in ("thinking", "redacted_thinking"):
+                    block["cache_control"] = {"type": "ephemeral"}
+                    break
         elif isinstance(last_message.content, str):
             # Convert string to list format with cache_control
             last_message.content = [

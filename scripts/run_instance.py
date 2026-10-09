@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 import time
 import traceback
@@ -40,6 +41,7 @@ SUMMARY_TAGS = (
     "feature_or_functionality_of_issue", "general_fix_pattern", "summary_of_fix_checklist",
     "design_patterns_and_coding_practices", "additional_concepts",
 )
+DEEPWIKI_WARMUP_TIMEOUT = 2700.0
 DEEPWIKI_WARMUP_QUESTION = "What is the purpose of this repository and how is its source code organized?"
 
 
@@ -93,16 +95,29 @@ def ensure_knowledge(dev_knowledge, sandbox, instance_id: str, rows: list[dict],
 def warm_up_deepwiki(instance_id: str, log) -> str:
     from src.agent.constant import REPO_MAP_DIR
     from src.agent.runtime_config import RuntimeConfig
+    from src.agent.tool_set import deepwiki_tool
     from src.agent.tool_set.deepwiki_tool import ask_repository_agent
 
-    if not os.path.isdir(os.path.join(REPO_MAP_DIR, instance_id)):
+    repo_copy = os.path.join(REPO_MAP_DIR, instance_id)
+    # DeepWiki creates the directory when a request reaches it, so a request that
+    # outlived its instance (whose cleanup removed the copy) leaves it empty.
+    if os.path.isdir(repo_copy) and not os.listdir(repo_copy):
+        os.rmdir(repo_copy)
+    if not os.path.isdir(repo_copy):
         rc = RuntimeConfig()
         rc.load_from_swe_rex_docker_instance(instance_id)  # makes the copy DeepWiki reads
         asyncio.run(rc.swe_rex_deployment.stop())
         RuntimeConfig.reset_instance()
-    answer = ask_repository_agent.invoke(
-        {"query": DEEPWIKI_WARMUP_QUESTION}, config={"configurable": {"instance_id": instance_id}}
-    )
+    # The first question builds the index: a teleport-size repository took 15.5
+    # minutes, over the 900 s the agents' questions wait.
+    agent_timeout = deepwiki_tool.DEEPWIKI_TIMEOUT
+    deepwiki_tool.DEEPWIKI_TIMEOUT = max(agent_timeout, DEEPWIKI_WARMUP_TIMEOUT)
+    try:
+        answer = ask_repository_agent.invoke(
+            {"query": DEEPWIKI_WARMUP_QUESTION}, config={"configurable": {"instance_id": instance_id}}
+        )
+    finally:
+        deepwiki_tool.DEEPWIKI_TIMEOUT = agent_timeout
     if not answer or answer.lstrip().startswith("Error") or "\nError" in answer[:300]:
         raise RuntimeError(f"DeepWiki is not answering: {str(answer)[:500]}")
     log.info(f"DeepWiki ready ({len(answer)} chars)")
@@ -164,6 +179,8 @@ def main() -> None:
     parser.add_argument("--solver-iterations", type=int, default=1)
     parser.add_argument("--keep-workspaces", action="store_true", help="keep the repository copies on the host")
     parser.add_argument("--remove-images", action="store_true", help="remove the prepared and source images afterwards")
+    parser.add_argument("--timeout-min", type=int, default=150,
+                        help="fail the instance after this many minutes (a hung runtime start once held a worker for hours)")
     args = parser.parse_args()
 
     common.configure(args.benchmark)
@@ -187,10 +204,15 @@ def main() -> None:
               "stages": {}, "status": "failed"}
     t_total = time.time()
     instance = benchmark.get_instance(instance_id)
+    def _timed_out(signum, frame):
+        raise TimeoutError(f"instance exceeded {args.timeout_min} min")
+
+    signal.signal(signal.SIGALRM, _timed_out)
     # Token usage of every model call made in this process (knowledge and agents);
     # DeepWiki's answers and Advisor's relevance checks run in other processes.
     with get_usage_metadata_callback() as usage:
         try:
+            signal.alarm(args.timeout_min * 60)
             run_stages(args, instance, inst_dir, result, log)
             result["status"] = "completed"
         except Exception as e:
@@ -198,6 +220,7 @@ def main() -> None:
             result["traceback"] = traceback.format_exc()
             log.error(f"{instance_id} failed: {result['error']}")
         finally:
+            signal.alarm(0)
             leaked = sandbox.remove_containers(instance)
             if leaked:
                 log.warning(f"Removed {leaked} container(s) the run left running")

@@ -3,6 +3,7 @@
 # environment under external/ (gitignored). Safe to re-run.
 #
 #   DeepWiki-Open   a5f39e3 (2025-07-21) + patches/deepwiki-open-anthropic.patch
+#                   + patches/deepwiki-open-embedding-limits.patch
 #   Lingxi Advisor  0.8.6 from spine-se-lab/Lingxi-advisor a9d4ded (retrieval only)
 #   SWE-bench_Pro-os 66f9276 (v2.0.0; run scripts for all 731 V1 tasks)
 #   swebench        5.0.2 (SWE-bench Verified harness)
@@ -32,6 +33,7 @@ checkout() {  # url dir commit
 echo "== DeepWiki-Open"
 checkout https://github.com/AsyncFuncAI/deepwiki-open.git "$EXT/deepwiki-open" "$DEEPWIKI_COMMIT"
 git -C "$EXT/deepwiki-open" apply "$ROOT/patches/deepwiki-open-anthropic.patch"
+git -C "$EXT/deepwiki-open" apply "$ROOT/patches/deepwiki-open-embedding-limits.patch"
 [ -x "$EXT/deepwiki-venv/bin/python" ] || uv venv -q --python 3.12 "$EXT/deepwiki-venv"
 # Dependencies as of the commit's date.
 uv pip install -q --no-config --python "$EXT/deepwiki-venv/bin/python" --exclude-newer 2025-07-22T00:00:00Z \

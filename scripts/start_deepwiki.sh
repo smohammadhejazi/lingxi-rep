@@ -11,5 +11,8 @@ if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
 : "${OPENAI_API_KEY:?OPENAI_API_KEY is not set (DeepWiki embeddings)}"
 export PORT="${LINGXI_DEEPWIKI_PORT:-8008}"
 export NODE_ENV=production  # no auto-reload
+# One process serialises requests: an index build (up to 15 min for teleport)
+# blocked every other instance's questions. uvicorn reads WEB_CONCURRENCY.
+export WEB_CONCURRENCY="${LINGXI_DEEPWIKI_WORKERS:-6}"
 cd "$ROOT/external/deepwiki-open"
 exec "$ROOT/external/deepwiki-venv/bin/python" -m api.main

@@ -1,0 +1,15 @@
+# SWE-bench Pro instances whose completed runs must be redone (kept up to date as the run goes).
+# Smoke run (pro-smoke-5, 2026-10-09 00:16-01:03): DeepWiki indexes built before the
+# embedding-limits patch (02:20) were missing chunks, so the agents' DeepWiki answers came
+# from a partial index. Their results were moved to work/pro/runs/pro-main-200-superseded/
+# and their indexes to work/pro/deepwiki-superseded/; their knowledge caches are still valid.
+# flipt: 1000/2084 chunks missing
+instance_flipt-io__flipt-3b2c25ee8a3ac247c3fad13ad8d64ace34ec8ee7
+# vuls: 500/797 missing
+instance_future-architect__vuls-0ec945d0510cdebf92cdd8999f94610772689f14
+# navidrome: 500/1853 missing
+instance_navidrome__navidrome-55bff343cdaad1f04496f724eda4b55d422d7f17
+# qutebrowser: 500/4341 missing
+instance_qutebrowser__qutebrowser-0aa57e4f7243024fa4bba8853306691b5dbd77b3-v5149fcda2a9a6fe1d35dfed1bade1444a11ef271
+# NodeBB: 2500/6176 missing (index since rebuilt complete)
+instance_NodeBB__NodeBB-1ea9481af6125ffd6da0592ed439aa62af0bca11-vd59a5728dfc977f44533186ace531248c2917516

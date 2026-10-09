@@ -64,7 +64,8 @@ the agents' cached messages, logs and `result.json`).
 | Pager | Not set: in SWE-ReX's terminal, `git log`/`git show` open `less` (or `more`, in 9 of 11 Pro repositories checked) and wait until the shell tool's timeout and retry, about 3 minutes, then return a timeout error | `PAGER=cat GIT_PAGER=cat` in the prepared image | Saves wall time and gives the agents the git output they asked for; it happened twice per instance in the first Verified runs |
 | `core.fileMode` | Not set; v1.5's `chmod -R 777` marks every file modified in the agents' `git status` | `false` in the prepared repository | v1.5's patch command already ignored modes |
 | DeepWiki repository copy | Taken from the first container started for the instance, which can be a historical checkout | Only from the instance's own checkout; `.git` and `node_modules` (skipped by DeepWiki anyway) not copied | Bug: the agents' wiki could describe old code |
-| DeepWiki client | No timeout; `None` on failure | 900 s timeout; an error message on failure; index built before the agents start | A hung server would hang the run |
+| DeepWiki client | No timeout; `None` on failure | 900 s timeout for the agents' questions, 45 min for the warm-up question that builds the index; an error message on failure; index built before the agents start; the server runs 6 uvicorn workers (`WEB_CONCURRENCY`) | A hung server would hang the run. One worker serialises requests, so with 6 instances in parallel index builds (up to 15.5 min for teleport) queued past the timeout: 13 instances failed their warm-up on 2026-10-09 |
+| DeepWiki embeddings | (v1.5's server setup not released) | `patches/deepwiki-open-embedding-limits.patch`: each 500-chunk embedding batch is sent in sub-requests under OpenAI's 300,000-token request limit, inputs over 8,191 tokens are truncated, and rate limits, timeouts and 5xx are retried for minutes (DeepWiki-Open's retry gives up after 5 s) | Without it a rejected or rate-limited batch is stored without embeddings and dropped from retrieval: NodeBB's index kept 3,676 of 6,176 chunks (6,176/6,176 with the patch); the Verified smoke indexes were affected too |
 | Knowledge failures | An error message is cached as knowledge | Retried up to 3 times; then that issue is dropped and its decoder runs without knowledge (v1.5's behaviour for fewer than 3 issues) | Error text is not knowledge |
 | Dependencies | No lockfile, SWE-ReX `main` | `uv.lock` resolved as of 2025-07-26, SWE-ReX at that day's `main` | Current LangChain/LangGraph releases break v1.5's imports |
 
@@ -96,14 +97,56 @@ Fixes to the `db17799` commit, which does not run as committed:
   one (Haiku's solver once returned an empty message on qutebrowser). When an
   instance ends, `scripts/run_instance.py` now removes every container started
   from that instance's prepared image. The agents' behaviour is unchanged.
+* Prepared images on musl (Alpine; 8 of the 70-instance list, teleport and
+  webclients) get the SWE-ReX server installed into the image. Two teleport
+  images set pip's index to a mirror from their build host
+  (`http://127.0.0.1:9876/`), which failed the build; that install now ignores
+  the image's pip config. The image's own config, which the agents see, is kept.
+* `tool_set/oheditor.py`: v1.5 calls `validate_path` but discards its result, so
+  viewing a missing path (`AssertionError` in `_count_lines`) or editing a
+  directory raised and, after the node's one retry, ended the instance. Its
+  errors ("The path ... does not exist") are now returned to the agent; its
+  "already exists" check for `create` stays unenforced, as in v1.5 (create
+  overwrites). Happened on webclients-4feccb.
+* `tool_set/edit_tool.py`: OHEditor returns a plain string for `create` without
+  `file_text`; the wrapper read `.error` from it (`AttributeError`) and ended the
+  instance. The string is now returned as the tool's error. Happened on
+  teleport-37c372 and flipt-abaa59.
+* Submodules: one openlibrary image's `vendor/infogami` is at the recorded commit
+  but holds an untracked file from the image's setup (`infogami/infogami`), so
+  `git status` on the unmodified image already reports it modified and the
+  prepared-image check failed. The check and the prediction (`git diff`) ignore
+  submodule state; the image is left as published.
+* `scripts/run_instance.py` fails an instance after 90 minutes (`--timeout-min`).
+  A SWE-ReX runtime that did not start within its timeout once left the process
+  hanging, holding a worker for two hours (vuls-36456c); a failed instance is
+  retried once by `scripts/run_pipeline.sh`. The longest completed instance took
+  42 minutes. (Raised to 150 minutes with the 45-minute warm-up timeout.)
+* `workflow/knowledge_tts_for_swebench_workflow.py`: ToolNode ran with
+  `handle_tool_errors=False`, so a tool call with invalid arguments ended the
+  instance. Haiku sends `{}` when a call is cut off at the output limit (`bash`
+  without `command`, `think` without `thought`: navidrome-6c6223,
+  element-web-8f3c8b). pydantic `ValidationError`s are now returned to the model as
+  LangGraph's error message; other tool exceptions still raise.
+* `agent/state.py` (`messages_reducer`): v1.5 puts `cache_control` on the last
+  content block of the latest message; when that block is a thinking block the API
+  rejects the request (400, tutanota-518182). The last non-thinking block is marked.
+* `workflow/knowledge_tts_for_swebench_workflow.py` (problem solver): the solver's
+  input is the mapper's conversation, and the API rejects an assistant message whose
+  final block is thinking. Haiku's mapper can end with a thinking-only message (the
+  same tutanota-518182; Sonnet ended with text). Trailing thinking blocks of the last
+  message are dropped, and the message if nothing is left; the mapper's plan reaches
+  the solver through its prompt either way.
+* DeepWiki warm-up: DeepWiki creates the repository directory when a request
+  reaches it, so a queued request that outlived its instance (whose cleanup removed
+  the copy) left an empty directory; the retry then skipped the copy and DeepWiki
+  indexed nothing ("No valid embeddings"). An empty copy is now replaced.
 
 ## Kept from v1.5 on purpose
 
 * Every agent gets a fresh container; decoders run one after another.
 * The solver replays the mapper's file edits but not its shell commands (the
   replay looks for a tool named `run_shell_cmd`; the tool is registered as `bash`).
-* Viewing a path inside the repository that does not exist raises, which fails the agent's node; the
-  node is retried once (RetryPolicy), then the instance fails.
 * The prompts are unchanged, including "I've uploaded the python code repository"
   on Go and JavaScript repositories.
 * The shell tool's description still mentions a package mirror; there is none,

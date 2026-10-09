@@ -216,8 +216,11 @@ def _musl_server_script() -> str:
         "done",
         '[ -n "$PY" ] || { echo "no Python >= 3.10 with venv in this image" >&2; exit 42; }',
         f'"$PY" -m venv {SERVER_DIR}',
-        f"{SERVER_DIR}/bin/pip install --no-cache-dir --disable-pip-version-check "
-        f"-c /tmp/lingxi/constraints.txt swe-rex=={SWEREX_SERVER_VERSION}",
+        # Some Pro images set pip's index to a mirror that existed only where they
+        # were built (teleport: /etc/pip.conf -> http://127.0.0.1:9876/). The
+        # server install ignores the image's pip config; the image keeps it.
+        f"PIP_CONFIG_FILE=/dev/null {SERVER_DIR}/bin/pip install --no-cache-dir --disable-pip-version-check "
+        f"--index-url https://pypi.org/simple -c /tmp/lingxi/constraints.txt swe-rex=={SWEREX_SERVER_VERSION}",
     ]) + "\n"
 
 
@@ -230,7 +233,10 @@ def _verify_script(instance: dict) -> str:
         'echo "outside=$(git rev-list --all --not HEAD | wc -l)"',
         f'echo "base_ancestor=$(git merge-base --is-ancestor {instance["base_commit"]} HEAD && echo yes || echo no)"',
         f'if [ -n "{fix}" ]; then git cat-file -e "{fix}^{{commit}}" 2>/dev/null && echo fix=present || echo fix=absent; fi',
-        'echo "dirty=$(git status --porcelain | wc -l)"',
+        # Submodules are left as the image has them: an openlibrary image's
+        # vendor/infogami (at the recorded commit) holds an untracked file from the
+        # image's setup, so the unmodified image already shows it as modified.
+        'echo "dirty=$(git status --porcelain --ignore-submodules=all | wc -l)"',
     ]) + "\n"
 
 
@@ -442,7 +448,7 @@ def capture_patch(rc) -> str:
     at, new files included. Runs as its own command, not in the agent's shell
     session, so the session's state cannot affect it."""
     command = (
-        f"git add -N . && git -c core.fileMode=false diff {rc.diff_base or 'HEAD'} --no-color --no-ext-diff"
+        f"git add -N . && git -c core.fileMode=false diff {rc.diff_base or 'HEAD'} --no-color --no-ext-diff --ignore-submodules=all"
     )
     response = asyncio.run(
         rc.swe_rex_deployment.runtime.execute(

@@ -119,7 +119,13 @@ class OHEditor:
             enable_linting = True
 
         # code.interact('OH Editor', local=dict(globals(), **locals()))
-        self.validate_path(command, _path)
+        # v1.5 discards validate_path's result, so viewing a missing path (or
+        # editing a directory) went on to raise and end the instance. Its errors
+        # now go back to the agent, except "already exists" for create, which
+        # v1.5 never enforced (create overwrites).
+        validation = self.validate_path(command, _path)
+        if validation is not None and not (command == "create" and _path.exists()):
+            return validation
         if command == "view":
             return self.view(_path, view_range)
         elif command == "create":
