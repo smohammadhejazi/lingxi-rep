@@ -474,9 +474,14 @@ def get_dev_knowledge_design_version_2(
     log_output.append(f"----loading history file: {os.path.basename(history_issue_file)}")
     assert os.path.exists(history_issue_file), f"History issue file does not exist: {history_issue_file}"
     df = pd.read_json(history_issue_file, lines=True)
-    
-    retrieved_issues = df[df["instance_id"] == instance_id]
-    
+
+    # v1.5 read one file covering every instance; ours is per instance and is
+    # empty (no columns) when Advisor selected no issue.
+    if "instance_id" not in df.columns:
+        retrieved_issues = df
+    else:
+        retrieved_issues = df[df["instance_id"] == instance_id]
+
     if len(retrieved_issues) == 0:
         log_output.append(f"----no retrieved issues found")
         logger.info("\n".join(log_output))
@@ -579,9 +584,14 @@ def get_dev_knowledge_design_version_3(
     log_output.append(f"----loading history file: {os.path.basename(history_issue_file)}")
     assert os.path.exists(history_issue_file), f"History issue file does not exist: {history_issue_file}"
     df = pd.read_json(history_issue_file, lines=True)
-    
-    retrieved_issues = df[df["instance_id"] == instance_id]
-    
+
+    # v1.5 read one file covering every instance; ours is per instance and is
+    # empty (no columns) when Advisor selected no issue.
+    if "instance_id" not in df.columns:
+        retrieved_issues = df
+    else:
+        retrieved_issues = df[df["instance_id"] == instance_id]
+
     if len(retrieved_issues) == 0:
         log_output.append(f"----no retrieved issues found")
         logger.info("\n".join(log_output))
@@ -696,9 +706,14 @@ def get_dev_knowledge_design_version_4(
     logger.info(f"----loading history file: {os.path.basename(history_issue_file)}")
     assert os.path.exists(history_issue_file), f"History issue file does not exist: {history_issue_file}"
     df = pd.read_json(history_issue_file, lines=True)
-    
-    retrieved_issues = df[df["instance_id"] == instance_id]
-    
+
+    # v1.5 read one file covering every instance; ours is per instance and is
+    # empty (no columns) when Advisor selected no issue.
+    if "instance_id" not in df.columns:
+        retrieved_issues = df
+    else:
+        retrieved_issues = df[df["instance_id"] == instance_id]
+
     if len(retrieved_issues) == 0:
         logger.info("----no retrieved issues found")
         return []

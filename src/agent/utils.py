@@ -100,7 +100,10 @@ def compress_agent_thinking_observation_action(messages: List, agent_name: str) 
     """
     if len(messages) == 1:
         logger.warning(f"No action found for {agent_name}")
-        return messages[0].content if hasattr(messages[0], 'content') else str(messages[0])
+        # v1.5 returned `.content`, which for Claude 4.5 models is a list of
+        # blocks; callers append the patch with `+=`, which extended that list
+        # (the message itself) with single characters and broke the state reducer.
+        return messages[0].text() if hasattr(messages[0], 'text') else str(messages[0])
     elif len(messages) == 0:
         logger.warning(f"No action found for {agent_name}")
         return None

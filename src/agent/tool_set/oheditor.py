@@ -14,6 +14,7 @@ from agent.tool_set.linter import DefaultLinter
 from agent.tool_set.utils import run_shell_local, maybe_truncate, is_within
 from agent.tool_set.constant import *
 from agent import runtime_config
+from src.agent import benchmark
 # from agent.tool_set.edit_history import FileHistoryManager
 
 Command = Literal[
@@ -90,12 +91,24 @@ class OHEditor:
         proj_path: str | None = None,
         **kwargs,
     ) -> CLIResult:
+        # The agents see the repository at its container path (`/testbed`, `/app`);
+        # the editor works on the host copy, so map that prefix onto `proj_path`.
+        if proj_path and os.path.isabs(path):
+            repo_dir = benchmark.REPO_DIR
+            if path == repo_dir or path.startswith(repo_dir + "/"):
+                path = path[len(repo_dir):].lstrip("/") or "."
         _path = Path(os.path.join(proj_path, path))
 
-        # Paths stay inside the repository copy. Any other host path behaves as a
-        # path that does not exist, which raises here like it does for v1.5.
+        # Paths stay inside the repository copy. Any other path gets the error
+        # v1.5 gives for a missing path, as a tool result: ToolNode runs with
+        # handle_tool_errors=False, so raising would end the whole task.
         if proj_path and not is_within(str(_path), proj_path):
-            raise FileNotFoundError(f"[Errno 2] No such file or directory: '{_path}'")
+            return CLIResult(
+                error=f"Error: The path {path} does not exist. Please provide a valid path "
+                f"inside the repository ({benchmark.REPO_DIR}).",
+                path=str(path),
+                prev_exist=False,
+            )
 
         print(
             f"path: {_path}, command:{command}, file_text:{file_text}, view_range:{view_range}, old_str:{old_str}, new_str:{new_str}, insert_line:{insert_line}, linting:{enable_linting}"
@@ -270,7 +283,14 @@ class OHEditor:
                 paths = stdout.strip().split("\n") if stdout.strip() else []
                 formatted_paths = []
                 for p in paths:
-                    if Path(p).is_dir():
+                    # A truncated listing ends with the truncation notice glued to the
+                    # last path, which can exceed NAME_MAX; v1.5 let that OSError end
+                    # the instance (ENAMETOOLONG is not one is_dir() swallows).
+                    try:
+                        is_dir = Path(p).is_dir()
+                    except OSError:
+                        is_dir = False
+                    if is_dir:
                         formatted_paths.append(f"{p}/")
                     else:
                         formatted_paths.append(p)

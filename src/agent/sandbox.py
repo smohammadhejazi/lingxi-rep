@@ -54,7 +54,7 @@ PBS_URL = (
     "cpython-3.11.13%2B20250723-x86_64-unknown-linux-gnu-install_only.tar.gz"
 )
 PBS_SHA256 = "71c0eb7f5025e2cde7a473b724e2959041fdba243ea58bea71ea2e3455107ea2"
-PREP_VERSION = "2"
+PREP_VERSION = "3"
 
 CACHE_DIR = os.path.join(RUNTIME_DIR, "cache")
 HOST_SERVER_DIR = os.path.join(CACHE_DIR, "lingxi-python")
@@ -311,6 +311,11 @@ def prepare_image(instance: dict, force: bool = False) -> str:
                 ensure_host_server_python()
                 server = "mount"
             dockerfile += [
+                # SWE-ReX runs the agents' commands in a terminal, where `git log`
+                # and `git show` open a pager (`less`, or `more` in most Pro images)
+                # that waits for a key until the command times out (about 3 minutes
+                # with the shell tool's retry). v1.5 did not set these.
+                "ENV PAGER=cat GIT_PAGER=cat",
                 "ENTRYPOINT []",
                 "CMD []",
                 f'LABEL lingxi.server="{server}" lingxi.prep="{PREP_VERSION}" '
@@ -454,6 +459,19 @@ def capture_patch(rc) -> str:
 
 def instance_workspace_dir(instance_id: str) -> str:
     return os.path.join(DOCKER_MAP_DIR, instance_id)
+
+
+def remove_containers(instance: dict) -> int:
+    """Remove every container still running from the instance's prepared image.
+    v1.5 stops an agent's deployment only when the agent's node succeeds, so a
+    node that raises (and is retried by its RetryPolicy, or ends the run) leaves
+    its container running. Prepared images are per instance, so this touches no
+    other instance's containers."""
+    image = prepared_image(instance)
+    ids = _run(["docker", "ps", "-aq", "--filter", f"ancestor={image}"]).stdout.split()
+    if ids:
+        _run(["docker", "rm", "-f", *ids])
+    return len(ids)
 
 
 def cleanup_workspaces(instance: dict) -> None:

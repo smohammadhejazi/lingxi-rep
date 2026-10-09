@@ -1,0 +1,13 @@
+# SWE-bench Pro (V1) smoke test, 5 instances from pro_smoke_10.txt. Pro has no difficulty
+# labels; the levels below are by gold-patch size (lines changed, files). The large repositories
+# (teleport, element-web, tutanota) are left out to keep DeepWiki indexing small.
+# easy: 33 lines, 1 file (Go)
+instance_future-architect__vuls-0ec945d0510cdebf92cdd8999f94610772689f14
+# easy: 36 lines, 2 files (JavaScript)
+instance_NodeBB__NodeBB-1ea9481af6125ffd6da0592ed439aa62af0bca11-vd59a5728dfc977f44533186ace531248c2917516
+# medium: 53 lines, 5 files (Go)
+instance_flipt-io__flipt-3b2c25ee8a3ac247c3fad13ad8d64ace34ec8ee7
+# medium: 59 lines, 3 files (Python)
+instance_qutebrowser__qutebrowser-0aa57e4f7243024fa4bba8853306691b5dbd77b3-v5149fcda2a9a6fe1d35dfed1bade1444a11ef271
+# hard: 181 lines, 7 files (Go)
+instance_navidrome__navidrome-55bff343cdaad1f04496f724eda4b55d422d7f17

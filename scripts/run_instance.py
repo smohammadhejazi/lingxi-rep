@@ -198,6 +198,10 @@ def main() -> None:
             result["traceback"] = traceback.format_exc()
             log.error(f"{instance_id} failed: {result['error']}")
         finally:
+            leaked = sandbox.remove_containers(instance)
+            if leaked:
+                log.warning(f"Removed {leaked} container(s) the run left running")
+            result["containers_removed"] = leaked
             if not args.keep_workspaces:
                 sandbox.cleanup_workspaces(instance)
             if args.remove_images:
